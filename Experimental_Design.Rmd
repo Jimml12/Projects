@@ -1,0 +1,62 @@
+---
+title: "StainProject"
+author: "Jimmy Le"
+date: "11/23/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DoE.base)
+library(MASS)
+```
+
+```{r cars}
+run <- c(1,2,3,4,5,6,7,8,9,10,11,12)
+Volume <- c(1,1,1,1,1,1,2,2,2,2,2,2)
+BeforeSoak <- c(1,1,1,2,2,2,1,1,1,2,2,2)
+OfSoak <- c(1,2,2,1,1,2,1,1,2,1,2,2)
+Temperature <- c(1,2,2,1,2,1,1,2,1,2,1,2)
+Detergent <- c(1,2,3,3,1,2,2,3,1,2,3,1)
+Stain <- c(77.26189,73.60767,49.71833,61.47078,54.72022,78.31111,82.84678,56.76589,78.46422,45.68689,66.21567,68.61644)
+Variance_of_Stain <- c(52.34416958,117.2014775,113.6255434,82.79119963,1.49814625,
+41.89106768,1.019014034,175.134884,66.03396014,35.62202186,79.32234409,19.4380829)
+logVariance <- log(Variance_of_Stain)
+data <- data.frame(run,Volume,BeforeSoak,OfSoak,Temperature,Detergent,Stain)
+ka <- data -1 
+#data$run <- ka$run + 1
+data
+
+```
+```{r}
+cor(data, method = "kendall") #I think we use kendall estimation as it's based on rank
+#cor(data)
+```
+
+```{r}
+model2 <- lm(Stain ~ . - run, data = data)
+summary(model2)
+stepAIC(model2)
+```
+
+
+```{r}
+model <- lm(data$Stain ~ (. - run - Volume)^2, data = data)
+summary(model)
+plot(model, which = 1)
+
+dispersion <- lm(logVariance ~ (. - run - Volume - Stain)^2, data = data)
+summary(dispersion)
+plot(dispersion, which = 1)
+```
+```{r}
+halfnormal(model$coefficients * 2)
+halfnormal(dispersion$coefficients * 2)
+```
+
+```{r}
+
+```
+
+
+

@@ -1,0 +1,320 @@
+---
+title: "Stats425Project"
+author: "Jimmy Le"
+date: "3/7/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(broom)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(tm)
+library(topicmodels)
+library(tidytext)
+library(tidyr)
+library(pdftools)
+library(wordcloud)
+library(wordcloud2)
+library(reshape2)
+library(forcats)
+library(quanteda)
+```
+
+```{r}
+files <- list.files("./Stats425Project", pattern = "pdf$")
+setwd("./Stats425Project")
+Corp <- Corpus(URISource(files, mode = "text"), readerControl = list(reader = readPDF))
+inspect(Corp)
+corp <- corpus(Corp)
+
+```
+```{r}
+exclude <- c("shall", "thee", "thy", "thus", "will", "come",
+             "know", "may", "upon", "hath", "now", "well", "make",
+             "let", "see", "tell", "yet", "like", "put", "speak",
+             "give", "speak", "can", "comes", "makes", "sees", "tells",
+             "likes", "puts", "speaks", "gives", "speaks", "knows",
+             "say", "says", "take", "takes", "exeunt", "though", "hear", 
+             "think", "hears", "thinks", "listen", "listens", "hear", 
+             "hears", "follow" ,"commercially" ,"commercial" , "readable",
+             "personal", "doth", "membership", "stand", "therefore", 
+             "complete", "tis", "electronic", "prohibited", "must",
+             "look", "looks", "call", "calls", "done", "prove", "whose",
+             "enter", "one", "words", "thou", "came", "much", "never",
+             "wit", "leave", "even", "ever", "distributed" , "keep",
+             "stay", "made", "scene", "many", "away", "exit", "shalt","http", "homepage",  "shakespearemitedu","copyright", "rights", "reserved", "page", "blue revised", "continued", "cont’d","window","ext","staircase","stair","floor","slowly","fade","across","distant","courtyard","room","bedchamber","around","doorway","rampart","tent", "enter","reenter")
+```
+
+```{r}
+print("Simple Transformation")
+Corp.simple <-tm_map(Corp, content_transformer(function(x, pattern) gsub(pattern, " ", x)) , "/|@|\\|")
+Corp.simple[[1]]
+print("Conversion to Lower Case")
+Corp.lower <- tm_map(Corp.simple, content_transformer(tolower))
+Corp.lower[[1]]
+print("Remove Numbers")
+Corp.number <- tm_map(Corp.lower, removeNumbers)
+Corp.number[[1]]
+print("Remove Punctuation")
+Corp.punct <- tm_map(Corp.number, removePunctuation)
+Corp.punct[[1]]
+print("Remove English Stop Words")
+Corp.EngStop <- tm_map(Corp.punct, removeWords, stopwords("english"))
+Corp.EngStop[[1]]
+print("Remove Own Stop Words")
+Corp.MyStop <- tm_map(Corp.EngStop, removeWords, exclude)
+Corp.MyStop[[1]]
+print("Strip Whitespace")
+Corp.WhiteSpace <- tm_map(Corp.MyStop, stripWhitespace)
+Corp.WhiteSpace[[1]]
+print("Specific Transformation")
+toString <- content_transformer(function(x, from, to) gsub(from, to, x))
+Corp.SpecialTransformation <- tm_map(Corp.WhiteSpace, toString, "©", " ")
+Corp.SpecialTransformation[[1]]
+print("Stemming")
+Corp.stem <- tm_map(Corp.SpecialTransformation, stemDocument)
+Corp.stem[[1]]
+```
+
+```{r}
+#inspect(Corp.stem[[4]])
+#Corp.stem[[4]]$content[2]
+length(Corp.stem[[4]]$content) #number of pages
+```
+
+```{r}
+dtm <- DocumentTermMatrix(Corp.stem)
+inspect(dtm)
+ft <-findFreqTerms(dtm,lowfreq =  110)
+ft
+mft <- findFreqTerms(dtm,lowfreq = 80, highfreq =  110)
+mft
+plot(dtm, terms = ft, corThreshold = 0.95)
+plot(dtm, terms = mft, corThreshold = 0.95)
+```
+
+
+
+
+```{r}
+wordcloud(Corp.stem, min.freq = 50)
+
+#wordcloud2(findMostFreqTerms(dtm, 50))
+```
+
+
+```{r}
+# a <-findMostFreqTerms(dtm, 50)
+# a[[1]]
+# data.frame(a)
+wordcloud(Corp.stem[[1]]$content, min.freq = 20) #Original Play
+wordcloud(Corp.stem[[2]]$content, min.freq = 20) #1948
+wordcloud(Corp.stem[[3]]$content, min.freq = 20) #2015
+wordcloud(Corp.stem[[4]]$content, min.freq = 20) #2020
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+Tidydf <- tidy(dtm)
+top10words_each_doc <-Tidydf %>% group_by(document) %>% arrange(desc(count), .by_group = TRUE) %>% top_n(10, count)
+```
+
+```{r}
+ggplot(top10words_each_doc, aes(count, reorder(term,count))) + geom_col() + facet_wrap(~document, ncol = 2, scales = "free_y") + xlab("Count")  + ylab("Word") + ggtitle("Top 10 Most Common Words in each Movie/Play")
+```
+
+```{r}
+Tidydf %>% group_by(document) %>% bind_tf_idf(term,document,count) %>% arrange(desc(tf_idf), .by_group = TRUE) %>% slice_max(n = 10, order_by = tf_idf, with_ties = FALSE) %>% ggplot(aes(tf_idf, fct_reorder(term,tf_idf), fill = document)) + geom_col() + facet_wrap(~document, ncol = 2, scales = "free") + labs(x = "tf-idf", y = NULL) + ggtitle("Top 10 tf-idf scores in each Movie/Play")
+```
+
+```{r}
+corfreq <-Tidydf %>% group_by(document)  %>% mutate(proportion = count/sum(count),) %>% spread(document, proportion, fill = 0) %>% arrange(desc(count), .by_group = TRUE)
+corfreq12 <- corfreq %>% filter(!is.na(`Macbeth Original Play.pdf`)) %>% filter(!is.na(Macbeth1948.pdf))
+corfreqlast2 <- corfreq %>% filter(!is.na(Macbeth2015.pdf)) %>% filter(!is.na(Macbeth2020.pdf))
+ggplot(corfreq, aes(x = `Macbeth Original Play.pdf`, y = Macbeth1948.pdf)) + 
+  geom_abline(color = "gray40", lty = 2) + 
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) + 
+  geom_text(aes(label = term), check_overlap = TRUE, vjust = 1.5) + 
+  scale_x_log10(labels = percent_format()) + 
+  scale_y_log10(labels = percent_format()) + 
+  theme(legend.position="none") + 
+  labs(y = "Proportion in Original Play", x = "Proportion in Macbeth1948")+
+  ggtitle("Original Play vs Macbeth1948")
+ggplot(corfreq, aes(x = Macbeth1948.pdf, y = Macbeth2015.pdf)) + 
+  geom_abline(color = "gray40", lty = 2) + 
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) + 
+  geom_text(aes(label = term), check_overlap = TRUE, vjust = 1.5) + 
+  scale_x_log10(labels = percent_format()) + 
+  scale_y_log10(labels = percent_format()) + 
+  theme(legend.position="none") + 
+  labs(y = "Proportion in Macbeth1948", x = "Proportion in Macbeth2015")+
+  ggtitle("Macbeth1948 vs Macbeth2015")
+ggplot(corfreq, aes(x = Macbeth2015.pdf, y = Macbeth2020.pdf)) + 
+  geom_abline(color = "gray40", lty = 2) + 
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) + 
+  geom_text(aes(label = term), check_overlap = TRUE, vjust = 1.5) + 
+  scale_x_log10(labels = percent_format()) + 
+  scale_y_log10(labels = percent_format()) + 
+  theme(legend.position="none") + 
+  labs(y = "Proportion in Macbeth2015", x = "Proportion in Macbeth2015")+
+  ggtitle("Macbeth2015 vs Macbeth2020")
+ggplot(corfreq, aes(x = `Macbeth Original Play.pdf`, y = Macbeth2020.pdf)) + 
+  geom_abline(color = "gray40", lty = 2) + 
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) + 
+  geom_text(aes(label = term), check_overlap = TRUE, vjust = 1.5) + 
+  scale_x_log10(labels = percent_format()) + 
+  scale_y_log10(labels = percent_format()) + 
+  theme(legend.position="none") + 
+  labs(y = "Proportion in Original Play", x = "Proportion in Macbeth2020")+
+  ggtitle("Original Play vs Macbeth2020")
+```
+
+
+
+```{r}
+ab <-cor.test(corfreq$`Macbeth Original Play.pdf`, corfreq$Macbeth1948.pdf)
+bc <-cor.test(corfreq$Macbeth1948.pdf, corfreq$Macbeth2015.pdf)
+cd <-cor.test(corfreq$Macbeth2015.pdf, corfreq$Macbeth2020.pdf)
+ac <-cor.test(corfreq$`Macbeth Original Play.pdf`, corfreq$Macbeth2015.pdf)
+ae <-cor.test(corfreq$`Macbeth Original Play.pdf`, corfreq$Macbeth2020.pdf)
+cat("P-val is:", ab$p.value,"\n","r = ",unname(ab[["estimate"]]))
+cat("P-val is:", bc$p.value,"\n","r = ",unname(bc[["estimate"]]))
+cat("P-val is:", cd$p.value,"\n","r = ",unname(cd[["estimate"]]))
+cat("P-val is:", ac$p.value,"\n","r = ",unname(ac[["estimate"]]))
+cat("P-val is:", ae$p.value,"\n","r = ",unname(ae[["estimate"]]))
+
+
+```
+
+```{r}
+LDA.model <- LDA(dtm, k = 3, control = list(seed = 1128))
+LDA.tidy <- tidy(LDA.model, matrix = "beta")
+LDA.tidy <- LDA.tidy %>% group_by(topic)
+sortedLDA <-arrange(LDA.tidy, desc(beta), .by_group = TRUE)
+sortedLDA %>% top_n(10, beta)
+
+```
+
+
+
+```{r}
+LDA.tidy2 <- tidy(LDA.model, matrix = "gamma")
+LDA.tidy2 <-LDA.tidy2 %>% mutate(document = reorder(document, gamma * topic))
+ggplot(LDA.tidy2, aes(factor(topic), gamma)) + geom_boxplot() + facet_wrap(~ document)  + ggtitle("Topic Selection")+ xlab("Topic")                
+```
+
+```{r}
+top10LDA <- top_n(sortedLDA, 10)
+top10LDA
+ggplot(top10LDA, aes(reorder_within(term, beta, topic),beta)) + geom_col(show.legend = FALSE) +facet_wrap(~ topic, scales = 
+"free") +coord_flip() +scale_x_reordered() + ggtitle("Top 10 Words in each Topic by Beta") + xlab("Word")
+```
+```{r}
+
+classification <- LDA.tidy %>% group_by(term) %>% top_n(1, beta) %>% ungroup()
+#classification #What model thinks the chapter belongs to which topic
+Missclassification <- LDA.tidy %>% group_by(term) %>% top_n(2, beta) %>% slice_min(n=1,beta) %>% transmute("Incorrect Prediction" = topic,term)
+classification %>% inner_join(Missclassification, by = "term")
+assignments <- augment(LDA.model, data = Tidydf)
+assignments
+missclassifiedterms <-assignments %>%  left_join(Missclassification) %>%group_by(term) %>% rename("Prediction" = .topic)  %>% ungroup() %>% group_by(document) %>% slice_max(count, n = 5)
+#%>% mutate(percent=count/sum(count)) %>% filter(term != consensus)
+# %>%
+# ggplot(aes(consensus, term, fill = percent)) +geom_tile() +
+# scale_fill_gradient2(high = "red", label = percent_format()) +theme_minimal() +
+# theme(axis.text.x = element_text(angle = 90, hjust = 1),
+# panel.grid = element_blank()) +
+# labs(x = "Document words were assigned to",y = "Book words came from",fill = "% of 
+# assignments")
+missclassifiedterms
+```
+
+```{r}
+TopIncorrectWords <-LDA.tidy %>% group_by(term) %>% slice_max(n=5, beta, with_ties = FALSE) %>% slice_min(n=1,beta, with_ties = FALSE) %>% group_by(topic) %>% slice_max(beta, n = 5, with_ties = FALSE)
+TopCorrectWords <-LDA.tidy %>% group_by(topic) %>% slice_max(beta, n = 5, with_ties = FALSE)
+
+```
+```{r}
+ggplot(TopIncorrectWords, aes(beta, reorder(term,beta))) + geom_col() + facet_wrap(~topic, ncol = 2, scales = "free_y") + xlab("beta")  + ylab("Word") + ggtitle("Top 5 Most Common Incorrect Words in each Cluster")
+ggplot(TopCorrectWords, aes(beta, reorder(term,beta))) + geom_col() + facet_wrap(~topic, ncol = 2, scales = "free_y") + xlab("beta")  + ylab("Word") + ggtitle("Top 5 Most Common Words in each Cluster")
+```
+
+```{r}
+LDA.tidy %>% group_by(term) %>% mutate(WordLength = nchar(term))  %>% group_by(topic) %>% slice_max(n = 50, beta)   %>% summarise(mean = mean(WordLength))
+LDA.tidy %>% group_by(term) %>% mutate(WordLength = nchar(term))  %>% group_by(topic) %>% slice_max(n = 100, beta)   %>% summarise(mean = mean(WordLength))
+```
+
+```{r}
+#WordLengths <-LDA.tidy %>% group_by(term) %>% mutate(WordLength = nchar(term))  %>% group_by(topic)  %>% slice_max(n = 100, beta) %>% pull(WordLength)
+WordLengths <-LDA.tidy %>% group_by(term) %>% mutate(WordLength = nchar(term)) %>% group_by(topic) %>% slice_max(n = 300, beta, with_ties = FALSE)  %>% group_split() 
+WordLengths
+#%>% spread(topic,WordLength) 
+WordLengths[[1]] #topic 1
+cor.test(WordLengths[[1]][["WordLength"]], WordLengths[[2]][["WordLength"]])
+cor.test(WordLengths[[2]][["WordLength"]], WordLengths[[3]][["WordLength"]])
+cor.test(WordLengths[[1]][["WordLength"]], WordLengths[[3]][["WordLength"]])
+```
+
+```{r}
+LDA.model <- LDA(dtm, k = 2, control = list(seed = 1128))
+LDA.tidy <- tidy(LDA.model, matrix = "beta")
+LDA.tidy <- LDA.tidy %>% group_by(topic)
+sortedLDA <-arrange(LDA.tidy, desc(beta), .by_group = TRUE)
+sortedLDA %>% top_n(10, beta)
+```
+
+```{r}
+LDA.tidy2 <- tidy(LDA.model, matrix = "gamma")
+LDA.tidy2 <-LDA.tidy2 %>% mutate(document = reorder(document, gamma * topic))
+ggplot(LDA.tidy2, aes(factor(topic), gamma)) + geom_boxplot() + facet_wrap(~ document)  + ggtitle("Topic Selection")+ xlab("Topic")                
+```
+
+```{r}
+top10LDA <- top_n(sortedLDA, 10)
+top10LDA
+ggplot(top10LDA, aes(reorder_within(term, beta, topic),beta)) + geom_col(show.legend = FALSE) +facet_wrap(~ topic, scales = 
+"free") +coord_flip() +scale_x_reordered() + ggtitle("Top 10 Words in each Topic by Beta") + xlab("Word")
+```
+```{r}
+
+classification <- LDA.tidy %>% group_by(term) %>% top_n(1, beta) %>% ungroup()
+#classification #What model thinks the chapter belongs to which topic
+Missclassification <- LDA.tidy %>% group_by(term) %>% top_n(2, beta) %>% slice_min(n=1,beta) %>% transmute("Incorrect Prediction" = topic,term)
+classification %>% inner_join(Missclassification, by = "term")
+assignments <- augment(LDA.model, data = Tidydf)
+assignments
+missclassifiedterms <-assignments %>%  left_join(Missclassification) %>%group_by(term) %>% rename("Prediction" = .topic)  %>% ungroup() %>% group_by(document) %>% slice_max(count, n = 5)
+#%>% mutate(percent=count/sum(count)) %>% filter(term != consensus)
+# %>%
+# ggplot(aes(consensus, term, fill = percent)) +geom_tile() +
+# scale_fill_gradient2(high = "red", label = percent_format()) +theme_minimal() +
+# theme(axis.text.x = element_text(angle = 90, hjust = 1),
+# panel.grid = element_blank()) +
+# labs(x = "Document words were assigned to",y = "Book words came from",fill = "% of 
+# assignments")
+missclassifiedterms
+```
+
+```{r}
+TopIncorrectWords <-LDA.tidy %>% group_by(term) %>% slice_max(n=5, beta, with_ties = FALSE) %>% slice_min(n=1,beta, with_ties = FALSE) %>% group_by(topic) %>% slice_max(beta, n = 5, with_ties = FALSE)
+TopCorrectWords <-LDA.tidy %>% group_by(topic) %>% slice_max(beta, n = 5, with_ties = FALSE)
+
+```
+
+```{r}
+ggplot(TopIncorrectWords, aes(beta, reorder(term,beta))) + geom_col() + facet_wrap(~topic, ncol = 2, scales = "free_y") + xlab("beta")  + ylab("Word") + ggtitle("Top 5 Most Common Incorrect Words in each Cluster")
+ggplot(TopCorrectWords, aes(beta, reorder(term,beta))) + geom_col() + facet_wrap(~topic, ncol = 2, scales = "free_y") + xlab("beta")  + ylab("Word") + ggtitle("Top 5 Most Common Words in each Cluster")
+```
